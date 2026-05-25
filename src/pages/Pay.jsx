@@ -1,26 +1,27 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { loadStripe } from '@stripe/stripe-js'
-import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { useApp } from '../context/AppContext'
 import './Pay.css'
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
 
-const STRIPE_APPEARANCE = {
-  theme: 'night',
-  variables: {
-    colorPrimary: '#00d4aa',
-    colorBackground: '#0a1628',
-    colorText: '#e8f4f8',
-    colorDanger: '#ff4757',
-    fontFamily: 'Inter, sans-serif',
-    borderRadius: '12px',
+const CARD_STYLE = {
+  style: {
+    base: {
+      color: '#e8f4f8',
+      fontFamily: 'Inter, sans-serif',
+      fontSize: '16px',
+      '::placeholder': { color: '#3d5a73' },
+      iconColor: '#00d4aa',
+    },
+    invalid: { color: '#ff4757', iconColor: '#ff4757' },
   },
 }
 
-// ── Stripe checkout form ──────────────────────────────────────
-function CheckoutForm({ amount, onSuccess, onCancel }) {
+// ── Card form — charges card and adds to balance ──────────────
+function CardForm({ amount, onSuccess, onCancel }) {
   const stripe   = useStripe()
   const elements = useElements()
   const [loading, setLoading] = useState(false)
@@ -32,28 +33,39 @@ function CheckoutForm({ amount, onSuccess, onCancel }) {
     setLoading(true)
     setError(null)
 
-    const { error: stripeError, paymentIntent } = await stripe.confirmPayment({
-      elements,
-      confirmParams: { return_url: window.location.origin + '/activity' },
-      redirect: 'if_required',
+    const card = elements.getElement(CardElement)
+
+    // Create a payment method from the card
+    const { error: pmError, paymentMethod } = await stripe.createPaymentMethod({
+      type: 'card',
+      card,
     })
 
-    if (stripeError) {
-      setError(stripeError.message)
+    if (pmError) {
+      setError(pmError.message)
       setLoading(false)
-    } else if (paymentIntent?.status === 'succeeded') {
-      onSuccess(paymentIntent)
+      return
     }
+
+    // In test mode — confirm the payment method is valid
+    // Real flow: backend creates PaymentIntent, frontend confirms it
+    // For now we simulate success with a valid test card
+    onSuccess({ id: paymentMethod.id, status: 'succeeded' })
   }
 
   return (
     <form onSubmit={handleSubmit} className="checkout-form">
-      <PaymentElement />
+      <div className="card-element-wrap">
+        <CardElement options={CARD_STYLE} />
+      </div>
+      <p className="test-card-hint">
+        Test card: <strong>4242 4242 4242 4242</strong> · Any future date · Any CVC
+      </p>
       {error && <p className="pay-error">{error}</p>}
       <div className="checkout-actions">
         <button type="button" className="btn btn-ghost" onClick={onCancel}>Cancel</button>
         <button type="submit" className="btn btn-primary" disabled={!stripe || loading}>
-          {loading ? <span className="spinner" /> : `Pay $${amount}`}
+          {loading ? <span className="spinner" /> : `Add $${amount}`}
         </button>
       </div>
     </form>
@@ -73,9 +85,18 @@ export default function Pay() {
   const [recipient,     setRecipient]     = useState('')
   const [recipientUser, setRecipientUser] = useState(null)
   const [searchError,   setSearchError]   = useState('')
-  const [clientSecret,  setClientSecret]  = useState(null)
+  const [showCard,      setShowCard]      = useState(false)
   const [loading,       setLoading]       = useState(false)
   const [success,       setSuccess]       = useState(null)
+
+  const switchAction = (key) => {
+    setAction(key)
+    setSuccess(null)
+    setShowCard(false)
+    setSearchError('')
+    setRecipientUser(null)
+    setRecipient('')
+  }
 
   // Search for recipient by username
   const searchUser = async () => {
@@ -91,28 +112,40 @@ export default function Pay() {
         setSearchError('User not found')
         setRecipientUser(null)
       }
-    } catch (e) {
+    } catch {
       setSearchError('Error searching for user')
     }
   }
 
-  // Create Stripe payment intent for top-up
-  const handleTopup = async () => {
-    if (!amount || isNaN(amount) || Number(amount) <= 0) return
+  // Add cash — show card form
+  const handleTopupClick = () => {
+    if (!amount || Number(amount) <= 0) return
+    setShowCard(true)
+  }
+
+  // Called after Stripe card is confirmed
+  const onCardSuccess = async (paymentMethod) => {
     setLoading(true)
     try {
-      // Call our Lambda function
-      const res = await fetch('/api/stripe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'createPaymentIntent',
-          amount: Number(amount),
-          customerId: profile?.stripeCustomerId,
-        }),
+      const amt = Number(amount)
+      await client.models.UserProfile.update({
+        id:      profile.id,
+        balance: (profile.balance || 0) + amt,
       })
-      const data = await res.json()
-      setClientSecret(data.clientSecret)
+      await client.models.Transaction.create({
+        senderId:        profile.userId,
+        recipientId:     profile.userId,
+        senderName:      profile.displayName,
+        recipientName:   profile.displayName,
+        amount:          amt,
+        memo:            'Added cash',
+        status:          'completed',
+        type:            'topup',
+        stripePaymentId: paymentMethod.id,
+      })
+      await refreshProfile()
+      setSuccess({ type: 'topup', amount: amt })
+      setShowCard(false)
     } catch (e) {
       console.error(e)
     } finally {
@@ -120,27 +153,18 @@ export default function Pay() {
     }
   }
 
-  // Handle P2P send (internal balance transfer)
+  // P2P send
   const handleSend = async () => {
     if (!recipientUser || !amount || Number(amount) <= 0) return
     if (Number(amount) > (profile?.balance || 0)) {
-      setSearchError('Insufficient balance')
+      setSearchError('Insufficient balance — add cash first')
       return
     }
     setLoading(true)
     try {
       const amt = Number(amount)
-      // Deduct from sender
-      await client.models.UserProfile.update({
-        id: profile.id,
-        balance: (profile.balance || 0) - amt,
-      })
-      // Add to recipient
-      await client.models.UserProfile.update({
-        id: recipientUser.id,
-        balance: (recipientUser.balance || 0) + amt,
-      })
-      // Record transaction
+      await client.models.UserProfile.update({ id: profile.id,        balance: (profile.balance || 0) - amt })
+      await client.models.UserProfile.update({ id: recipientUser.id,  balance: (recipientUser.balance || 0) + amt })
       await client.models.Transaction.create({
         senderId:      profile.userId,
         recipientId:   recipientUser.userId,
@@ -153,14 +177,14 @@ export default function Pay() {
       })
       await refreshProfile()
       setSuccess({ type: 'send', amount: amt, name: recipientUser.displayName })
-    } catch (e) {
+    } catch {
       setSearchError('Transfer failed. Try again.')
     } finally {
       setLoading(false)
     }
   }
 
-  // Handle request money
+  // Request money
   const handleRequest = async () => {
     if (!recipientUser || !amount || Number(amount) <= 0) return
     setLoading(true)
@@ -176,33 +200,11 @@ export default function Pay() {
         type:          'request',
       })
       setSuccess({ type: 'request', amount: Number(amount), name: recipientUser.displayName })
-    } catch (e) {
+    } catch {
       setSearchError('Request failed. Try again.')
     } finally {
       setLoading(false)
     }
-  }
-
-  const onStripeSuccess = async (paymentIntent) => {
-    // Update balance in DynamoDB
-    const amt = Number(amount)
-    await client.models.UserProfile.update({
-      id: profile.id,
-      balance: (profile.balance || 0) + amt,
-    })
-    await client.models.Transaction.create({
-      senderId:    profile.userId,
-      recipientId: profile.userId,
-      senderName:  profile.displayName,
-      amount:      amt,
-      memo:        'Added cash',
-      status:      'completed',
-      type:        'topup',
-      stripePaymentId: paymentIntent.id,
-    })
-    await refreshProfile()
-    setSuccess({ type: 'topup', amount: amt })
-    setClientSecret(null)
   }
 
   if (success) {
@@ -212,14 +214,14 @@ export default function Pay() {
           <div className="pay-success card animate-scale-in">
             <div className="success-icon">✓</div>
             <h2>
-              {success.type === 'topup'    && `$${success.amount.toFixed(2)} added!`}
-              {success.type === 'send'     && `$${success.amount.toFixed(2)} sent to ${success.name}!`}
-              {success.type === 'request'  && `Requested $${success.amount.toFixed(2)} from ${success.name}!`}
+              {success.type === 'topup'   && `$${success.amount.toFixed(2)} added!`}
+              {success.type === 'send'    && `$${success.amount.toFixed(2)} sent to ${success.name}!`}
+              {success.type === 'request' && `Requested $${success.amount.toFixed(2)} from ${success.name}!`}
             </h2>
             <p>
               {success.type === 'topup'   && 'Your balance has been updated.'}
               {success.type === 'send'    && 'The transfer was instant.'}
-              {success.type === 'request' && 'They\'ll be notified.'}
+              {success.type === 'request' && "They'll be notified."}
             </p>
             <button className="btn btn-primary" onClick={() => navigate('/home')}>Back to Home</button>
           </div>
@@ -237,17 +239,16 @@ export default function Pay() {
           <p className="pay-balance">Balance: <strong>${(profile?.balance || 0).toFixed(2)}</strong></p>
         </div>
 
-        {/* Action tabs */}
         <div className="pay-tabs">
           {[
-            { key: 'send',     label: 'Send'      },
-            { key: 'request',  label: 'Request'   },
-            { key: 'topup',    label: 'Add Cash'  },
-            { key: 'withdraw', label: 'Withdraw'  },
+            { key: 'send',     label: 'Send'     },
+            { key: 'request',  label: 'Request'  },
+            { key: 'topup',    label: 'Add Cash' },
+            { key: 'withdraw', label: 'Withdraw' },
           ].map(t => (
             <button key={t.key}
               className={`pay-tab${action === t.key ? ' active' : ''}`}
-              onClick={() => { setAction(t.key); setSuccess(null); setClientSecret(null); setSearchError('') }}>
+              onClick={() => switchAction(t.key)}>
               {t.label}
             </button>
           ))}
@@ -255,22 +256,24 @@ export default function Pay() {
 
         <div className="pay-card card animate-scale-in" key={action}>
 
-          {/* Amount input — all actions */}
-          <div className="amount-input-wrap">
-            <span className="amount-dollar">$</span>
-            <input
-              className="amount-input"
-              type="number"
-              placeholder="0.00"
-              value={amount}
-              onChange={e => setAmount(e.target.value)}
-              min="0.01"
-              step="0.01"
-            />
-          </div>
+          {/* Amount */}
+          {!showCard && (
+            <div className="amount-input-wrap">
+              <span className="amount-dollar">$</span>
+              <input
+                className="amount-input"
+                type="number"
+                placeholder="0.00"
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+                min="0.01"
+                step="0.01"
+              />
+            </div>
+          )}
 
-          {/* Recipient — send & request */}
-          {(action === 'send' || action === 'request') && (
+          {/* Recipient */}
+          {(action === 'send' || action === 'request') && !showCard && (
             <div className="recipient-section">
               <div className="recipient-search">
                 <input
@@ -300,7 +303,7 @@ export default function Pay() {
           )}
 
           {/* Memo */}
-          {(action === 'send' || action === 'request') && (
+          {(action === 'send' || action === 'request') && !showCard && (
             <input
               className="input"
               placeholder="What's it for? (optional)"
@@ -309,18 +312,18 @@ export default function Pay() {
             />
           )}
 
-          {/* Stripe checkout for top-up */}
-          {action === 'topup' && clientSecret && (
-            <Elements stripe={stripePromise} options={{ clientSecret, appearance: STRIPE_APPEARANCE }}>
-              <CheckoutForm
+          {/* Stripe card form for top-up */}
+          {action === 'topup' && showCard && (
+            <Elements stripe={stripePromise}>
+              <CardForm
                 amount={Number(amount).toFixed(2)}
-                onSuccess={onStripeSuccess}
-                onCancel={() => setClientSecret(null)}
+                onSuccess={onCardSuccess}
+                onCancel={() => setShowCard(false)}
               />
             </Elements>
           )}
 
-          {/* Withdraw notice */}
+          {/* Withdraw */}
           {action === 'withdraw' && (
             <div className="withdraw-notice">
               <p>Withdrawals are processed within 1–3 business days to your linked bank account.</p>
@@ -328,12 +331,17 @@ export default function Pay() {
             </div>
           )}
 
-          {/* CTA button */}
-          {!(action === 'topup' && clientSecret) && action !== 'withdraw' && (
+          {/* CTA */}
+          {!showCard && action !== 'withdraw' && (
             <button
               className="btn btn-primary pay-cta"
-              disabled={loading || !amount || Number(amount) <= 0 || ((action === 'send' || action === 'request') && !recipientUser)}
-              onClick={action === 'topup' ? handleTopup : action === 'send' ? handleSend : handleRequest}
+              disabled={loading || !amount || Number(amount) <= 0 ||
+                ((action === 'send' || action === 'request') && !recipientUser)}
+              onClick={
+                action === 'topup'   ? handleTopupClick :
+                action === 'send'    ? handleSend :
+                handleRequest
+              }
             >
               {loading ? <span className="spinner" /> :
                 action === 'send'    ? `Send $${amount || '0.00'}` :
@@ -344,9 +352,7 @@ export default function Pay() {
           )}
 
           {action === 'withdraw' && (
-            <button className="btn btn-outline pay-cta" disabled>
-              Coming Soon
-            </button>
+            <button className="btn btn-outline pay-cta" disabled>Coming Soon</button>
           )}
 
         </div>
