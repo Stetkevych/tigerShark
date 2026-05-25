@@ -116,11 +116,27 @@
 }
 
 /* ── Install banner ────────────────────────────────────────── */
+.install-section {
+  width: 100%;
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.install-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #3d5a73;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  text-align: left;
+}
+
 .install-banner {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 16px;
   padding: 12px 16px;
   background: rgba(0,212,170,0.08);
   border: 1px solid rgba(0,212,170,0.25);
@@ -150,18 +166,52 @@
   flex-direction: column;
   gap: 2px;
 }
-.install-text strong {
-  font-size: 13px;
+.install-text strong { font-size: 13px; font-weight: 700; color: #e8f4f8; }
+.install-text span   { font-size: 11px; color: #7a9bb5; }
+
+.install-cta {
+  font-size: 12px;
   font-weight: 700;
-  color: #e8f4f8;
-}
-.install-text span {
-  font-size: 11px;
-  color: #7a9bb5;
+  color: #fff;
+  background: linear-gradient(135deg, #00d4aa, #0077b6);
+  padding: 6px 14px;
+  border-radius: 50px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.install-arrow {
-  font-size: 18px;
-  color: #00d4aa;
-  font-weight: 700;
+.ios-instructions {
+  background: rgba(0,212,170,0.05);
+  border: 1px solid rgba(0,212,170,0.15);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
+
+.ios-step {
+  font-size: 13px;
+  color: #7a9bb5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  line-height: 1.5;
+}
+.ios-step strong { color: #e8f4f8; }
+
+.ios-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(0,212,170,0.2);
+  color: #00d4aa;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ios-icon { font-size: 16px; }

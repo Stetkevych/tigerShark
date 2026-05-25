@@ -68,6 +68,9 @@ function AppShell() {
 function InstallBanner() {
   const [prompt, setPrompt] = useState(null)
   const [installed, setInstalled] = useState(false)
+  const [showIOS, setShowIOS] = useState(false)
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent)
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
 
   useEffect(() => {
     const handler = (e) => { e.preventDefault(); setPrompt(e) }
@@ -76,21 +79,57 @@ function InstallBanner() {
     return () => window.removeEventListener('beforeinstallprompt', handler)
   }, [])
 
-  if (installed || !prompt) return null
+  if (isStandalone || installed) return null
 
   return (
-    <button className="install-banner" onClick={async () => {
-      prompt.prompt()
-      const { outcome } = await prompt.userChoice
-      if (outcome === 'accepted') setInstalled(true)
-    }}>
-      <img src="/tigershark.png" alt="" className="install-icon" />
-      <div className="install-text">
-        <strong>Add TigerShark to Home Screen</strong>
-        <span>Install the app for the best experience</span>
-      </div>
-      <span className="install-arrow">↓</span>
-    </button>
+    <div className="install-section">
+      <p className="install-section-label">📲 Get the app</p>
+
+      {prompt && (
+        <button className="install-banner" onClick={async () => {
+          prompt.prompt()
+          const { outcome } = await prompt.userChoice
+          if (outcome === 'accepted') setInstalled(true)
+        }}>
+          <img src="/tigershark.png" alt="" className="install-icon" />
+          <div className="install-text">
+            <strong>Add to Home Screen</strong>
+            <span>Install TigerShark on your device</span>
+          </div>
+          <span className="install-cta">Install</span>
+        </button>
+      )}
+
+      {isIOS && (
+        <button className="install-banner" onClick={() => setShowIOS(s => !s)}>
+          <img src="/tigershark.png" alt="" className="install-icon" />
+          <div className="install-text">
+            <strong>Add to Home Screen</strong>
+            <span>Tap to see how on iPhone / iPad</span>
+          </div>
+          <span className="install-cta">How?</span>
+        </button>
+      )}
+
+      {showIOS && (
+        <div className="ios-instructions">
+          <div className="ios-step"><span className="ios-num">1</span>Tap the <strong>Share</strong> button at the bottom of Safari</div>
+          <div className="ios-step"><span className="ios-num">2</span>Tap <strong>"Add to Home Screen"</strong></div>
+          <div className="ios-step"><span className="ios-num">3</span>Tap <strong>"Add"</strong> — done!</div>
+        </div>
+      )}
+
+      {!prompt && !isIOS && (
+        <button className="install-banner" onClick={() => setShowIOS(s => !s)}>
+          <img src="/tigershark.png" alt="" className="install-icon" />
+          <div className="install-text">
+            <strong>Install TigerShark</strong>
+            <span>Add to your home screen</span>
+          </div>
+          <span className="install-cta">↓ Install</span>
+        </button>
+      )}
+    </div>
   )
 }
 
