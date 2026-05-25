@@ -219,6 +219,11 @@ input, textarea, select { font-family: inherit; }
 .amount-positive { color: var(--green); }
 .amount-negative { color: var(--red); }
 
+/* ── Mobile keyboard scroll fix ───────────────────────────── */
+input:focus, textarea:focus, select:focus {
+  scroll-margin-bottom: 140px;
+}
+
 @media (min-width: 768px) {
   .container { max-width: 600px; }
   .page { padding-bottom: 32px; }

@@ -47,6 +47,11 @@
   flex-direction: column;
   gap: 16px;
   padding: 24px;
+  padding-bottom: 32px;
+}
+
+.pay .container {
+  padding-bottom: calc(var(--nav-height) + 120px);
 }
 
 /* ── Amount input ──────────────────────────────────────────── */

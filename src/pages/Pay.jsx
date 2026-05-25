@@ -282,6 +282,7 @@ export default function Pay() {
                   value={recipient}
                   onChange={e => { setRecipient(e.target.value); setRecipientUser(null) }}
                   onKeyDown={e => e.key === 'Enter' && searchUser()}
+                  onFocus={e => setTimeout(() => e.target.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300)}
                 />
                 <button className="btn btn-ghost search-btn" onClick={searchUser}>Find</button>
               </div>
