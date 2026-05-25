@@ -1,0 +1,95 @@
+.profile-pg-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 0 20px;
+}
+
+.profile-pg-title { font-size: 26px; font-weight: 800; letter-spacing: -0.4px; }
+.edit-btn { padding: 10px 18px; font-size: 14px; }
+
+/* ── Hero ──────────────────────────────────────────────────── */
+.profile-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  padding: 32px 24px;
+  margin-bottom: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.profile-avatar-wrap { position: relative; margin-bottom: 4px; }
+
+.profile-avatar {
+  width: 88px;
+  height: 88px;
+  font-size: 36px;
+  font-weight: 800;
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.4);
+}
+
+.profile-avatar-glow {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  opacity: 0.4;
+  filter: blur(10px);
+  z-index: 0;
+  animation: glowPulse 3s ease-in-out infinite;
+}
+
+.profile-display-name { font-size: 22px; font-weight: 800; letter-spacing: -0.3px; }
+.profile-username     { font-size: 14px; color: var(--teal); font-weight: 600; }
+.profile-bio-text     { font-size: 14px; color: var(--text-muted); line-height: 1.65; max-width: 280px; }
+.profile-email        { font-size: 12px; color: var(--text-dim); }
+
+.profile-edit-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+}
+
+.profile-bio-input { resize: none; line-height: 1.6; }
+
+/* ── Balance strip ─────────────────────────────────────────── */
+.balance-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 22px;
+  margin-bottom: 16px;
+  background: var(--grad-soft);
+  border-color: var(--border-glow);
+}
+
+.balance-strip-left { display: flex; flex-direction: column; gap: 4px; }
+.balance-strip-label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; }
+.balance-strip-amount { font-size: 28px; font-weight: 800; font-family: 'Space Grotesk', sans-serif; background: var(--grad-main); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.balance-strip-icon { font-size: 36px; }
+
+/* ── Sign out ──────────────────────────────────────────────── */
+.sign-out-btn {
+  width: 100%;
+  justify-content: center;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--red);
+  background: rgba(255,71,87,0.07);
+  border: 1.5px solid rgba(255,71,87,0.18);
+  margin-bottom: 28px;
+  transition: background var(--t-mid) var(--ease), border-color var(--t-mid) var(--ease), transform var(--t-mid) var(--ease-spring);
+}
+.sign-out-btn:hover {
+  background: rgba(255,71,87,0.14);
+  border-color: rgba(255,71,87,0.35);
+  transform: translateY(-1px);
+}

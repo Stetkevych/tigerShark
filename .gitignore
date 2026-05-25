@@ -1,0 +1,32 @@
+# Dependencies
+node_modules
+amplify/functions/stripePayment/node_modules
+
+# Build
+dist
+dist-ssr
+
+# Amplify generated — contains AWS resource ARNs, do not commit
+amplify_outputs.json
+.amplify
+
+# Environment — contains Stripe keys, never commit
+.env.local
+.env.*.local
+
+# Editor
+.vscode
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

@@ -1,0 +1,167 @@
+.app-root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Loading ───────────────────────────────────────────────── */
+.app-loading {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  background: var(--bg);
+}
+
+.app-loading-logo {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+  animation: fadeUp 0.5s var(--ease) both;
+  filter: drop-shadow(0 0 16px rgba(0,212,170,0.4));
+}
+
+/* ── Amplify Auth overrides ────────────────────────────────── */
+[data-amplify-authenticator] {
+  --amplify-colors-background-primary:   #050d1a;
+  --amplify-colors-background-secondary: #0a1628;
+  --amplify-colors-brand-primary-10:     rgba(0,212,170,0.1);
+  --amplify-colors-brand-primary-80:     #00d4aa;
+  --amplify-colors-brand-primary-90:     #00b894;
+  --amplify-colors-brand-primary-100:    #007a63;
+  --amplify-colors-font-primary:         #e8f4f8;
+  --amplify-colors-font-secondary:       #7a9bb5;
+  --amplify-colors-border-primary:       rgba(0,212,170,0.2);
+  --amplify-radii-medium:                12px;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(0,212,170,0.15) 0%, transparent 60%), #050d1a;
+}
+
+[data-amplify-authenticator] [data-amplify-container] {
+  width: 100%;
+  max-width: 420px;
+  padding: 0 18px;
+}
+
+[data-amplify-authenticator] [data-amplify-form] {
+  background: #0a1628;
+  border: 1px solid rgba(0,212,170,0.15);
+  border-radius: 18px;
+  padding: 32px 28px;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.5);
+}
+
+/* Force input text to be visible */
+[data-amplify-authenticator] input {
+  color: #e8f4f8 !important;
+  background: #132035 !important;
+  border-color: rgba(0,212,170,0.2) !important;
+  caret-color: #00d4aa !important;
+}
+
+[data-amplify-authenticator] input:focus {
+  border-color: #00d4aa !important;
+  box-shadow: 0 0 0 2px rgba(0,212,170,0.15) !important;
+}
+
+[data-amplify-authenticator] input::placeholder {
+  color: #3d5a73 !important;
+}
+
+[data-amplify-authenticator] label {
+  color: #7a9bb5 !important;
+}
+
+[data-amplify-authenticator] [data-amplify-fieldgroup] {
+  background: transparent !important;
+}
+
+/* ── Auth header ───────────────────────────────────────────── */
+.auth-header {
+  text-align: center;
+  padding: 0 0 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.auth-logo {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  animation: fadeUp 0.5s var(--ease) both;
+  filter: drop-shadow(0 0 20px rgba(0,212,170,0.4));
+}
+
+.auth-title {
+  font-size: 28px;
+  font-weight: 800;
+  font-family: 'Space Grotesk', sans-serif;
+  background: linear-gradient(135deg, #00d4aa 0%, #00b4d8 50%, #0077b6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.5px;
+}
+
+.auth-sub {
+  font-size: 14px;
+  color: #7a9bb5;
+}
+
+/* ── Install banner ────────────────────────────────────────── */
+.install-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: rgba(0,212,170,0.08);
+  border: 1px solid rgba(0,212,170,0.25);
+  border-radius: 14px;
+  width: 100%;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  text-align: left;
+}
+.install-banner:hover {
+  background: rgba(0,212,170,0.15);
+  border-color: rgba(0,212,170,0.5);
+  transform: translateY(-1px);
+}
+
+.install-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.install-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.install-text strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e8f4f8;
+}
+.install-text span {
+  font-size: 11px;
+  color: #7a9bb5;
+}
+
+.install-arrow {
+  font-size: 18px;
+  color: #00d4aa;
+  font-weight: 700;
+}
