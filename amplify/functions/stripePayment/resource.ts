@@ -7,4 +7,7 @@ export const stripePayment = defineFunction({
     STRIPE_SECRET_KEY: secret('STRIPE_SECRET_KEY'),
   },
   timeoutSeconds: 30,
+  bundling: {
+    externalModules: ['stripe'],
+  },
 });
