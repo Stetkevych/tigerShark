@@ -1,8 +1,32 @@
-import Stripe from 'stripe';
+import { request } from 'https';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16',
-});
+const STRIPE_KEY = () => process.env.STRIPE_SECRET_KEY;
+
+function stripeRequest(method, path, data) {
+  return new Promise((resolve, reject) => {
+    const body = data ? new URLSearchParams(data).toString() : '';
+    const options = {
+      hostname: 'api.stripe.com',
+      path,
+      method,
+      headers: {
+        'Authorization': `Bearer ${STRIPE_KEY()}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    };
+    const req = request(options, (res) => {
+      let raw = '';
+      res.on('data', chunk => raw += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(raw)) } catch { resolve(raw) }
+      });
+    });
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
@@ -12,51 +36,45 @@ const headers = {
 
 export const handler = async (event) => {
   try {
-    const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+    const body = typeof event.body === 'string' ? JSON.parse(event.body) : (event.body || {});
     const { action } = body;
 
     if (action === 'createPaymentIntent') {
       const { amount, currency = 'usd', customerId } = body;
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: Math.round(amount * 100),
+      const data = {
+        amount: String(Math.round(amount * 100)),
         currency,
-        customer: customerId || undefined,
-        automatic_payment_methods: { enabled: true },
-        metadata: { type: 'topup' },
-      });
-      return {
-        statusCode: 200, headers,
-        body: JSON.stringify({
-          clientSecret: paymentIntent.client_secret,
-          paymentIntentId: paymentIntent.id,
-        }),
+        'automatic_payment_methods[enabled]': 'true',
+        'metadata[type]': 'topup',
       };
+      if (customerId) data.customer = customerId;
+      const pi = await stripeRequest('POST', '/v1/payment_intents', data);
+      return { statusCode: 200, headers, body: JSON.stringify({ clientSecret: pi.client_secret, paymentIntentId: pi.id }) };
     }
 
     if (action === 'createCustomer') {
       const { email, name, userId } = body;
-      const customer = await stripe.customers.create({ email, name, metadata: { userId } });
+      const customer = await stripeRequest('POST', '/v1/customers', { email, name, 'metadata[userId]': userId });
       return { statusCode: 200, headers, body: JSON.stringify({ customerId: customer.id }) };
     }
 
     if (action === 'p2pTransfer') {
       const { amount, senderId, recipientId, memo } = body;
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: Math.round(amount * 100),
+      const pi = await stripeRequest('POST', '/v1/payment_intents', {
+        amount: String(Math.round(amount * 100)),
         currency: 'usd',
-        payment_method_types: ['card'],
-        metadata: { type: 'p2p', senderId, recipientId, memo: memo || '' },
-        confirm: false,
+        'payment_method_types[]': 'card',
+        'metadata[type]': 'p2p',
+        'metadata[senderId]': senderId,
+        'metadata[recipientId]': recipientId,
+        'metadata[memo]': memo || '',
       });
-      return {
-        statusCode: 200, headers,
-        body: JSON.stringify({ paymentIntentId: paymentIntent.id, status: paymentIntent.status }),
-      };
+      return { statusCode: 200, headers, body: JSON.stringify({ paymentIntentId: pi.id, status: pi.status }) };
     }
 
     if (action === 'getPaymentMethods') {
       const { customerId } = body;
-      const methods = await stripe.paymentMethods.list({ customer: customerId, type: 'card' });
+      const methods = await stripeRequest('GET', `/v1/payment_methods?customer=${customerId}&type=card`, null);
       return { statusCode: 200, headers, body: JSON.stringify({ paymentMethods: methods.data }) };
     }
 
