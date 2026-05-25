@@ -273,6 +273,24 @@ export default function Pay() {
     finally { setLoading(false) }
   }
 
+  const handleCryptoBuy = async (coin, qty) => {
+    setLoading(true)
+    try {
+      const amt = Number(amount)
+      await client.models.UserProfile.update({ id: profile.id, balance: (profile.balance || 0) - amt })
+      await client.models.Transaction.create({
+        senderId: profile.userId, recipientId: profile.userId,
+        senderName: profile.displayName, recipientName: profile.displayName,
+        amount: amt,
+        memo: `Bought ${qty} ${coin.symbol} @ $${coin.price.toLocaleString()}`,
+        status: 'completed', type: 'crypto',
+      })
+      await refreshProfile()
+      setSuccess({ type: 'crypto', amount: amt, coin: coin.symbol, qty })
+    } catch { setSearchError('Purchase failed. Try again.') }
+    finally { setLoading(false) }
+  }
+
   if (success) {
     return (
       <div className="pay page">
@@ -281,7 +299,7 @@ export default function Pay() {
             <div className="success-icon">✓</div>
             <h2>
               {success.type === 'topup'   && `$${success.amount.toFixed(2)} added!`}
-              {success.type === 'send'    && `$${success.amount.toFixed(2)} sent to ${success.name}!`}
+              {success.type === 'crypto'  && `${success.qty} ${success.coin} purchased!`}              {success.type === 'send'    && `$${success.amount.toFixed(2)} sent to ${success.name}!`}
               {success.type === 'request' && `Requested $${success.amount.toFixed(2)} from ${success.name}!`}
             </h2>
             <p>
@@ -290,7 +308,7 @@ export default function Pay() {
               {success.type === 'send'    && 'Transfer was instant.'}
               {success.type === 'request' && "They'll be notified."}
             </p>
-            <button className="btn btn-primary" onClick={() => navigate('/home')}>Back to Home</button>
+              {success.type === 'crypto'  && `$${success.amount.toFixed(2)} deducted from your balance.`}            <button className="btn btn-primary" onClick={() => navigate('/home')}>Back to Home</button>
           </div>
         </div>
       </div>
@@ -311,6 +329,7 @@ export default function Pay() {
             { key: 'send',     label: 'Send'     },
             { key: 'request',  label: 'Request'  },
             { key: 'topup',    label: 'Add Cash' },
+            { key: 'crypto',   label: '₿ Crypto' },
             { key: 'withdraw', label: 'Withdraw' },
           ].map(t => (
             <button key={t.key}
@@ -382,8 +401,46 @@ export default function Pay() {
             </div>
           )}
 
+          {/* Crypto */}
+          {action === 'crypto' && (
+            <div className="crypto-section">
+              <div className="crypto-header">
+                <span className="crypto-icon">₿</span>
+                <div>
+                  <p className="crypto-title">Buy Crypto</p>
+                  <p className="crypto-sub">Purchase from your TigerShark balance</p>
+                </div>
+              </div>
+              <div className="crypto-coins">
+                {[
+                  { symbol: 'BTC',  name: 'Bitcoin',  icon: '₿', color: '#f7931a', price: 67420 },
+                  { symbol: 'ETH',  name: 'Ethereum', icon: 'Ξ', color: '#627eea', price: 3540  },
+                  { symbol: 'SOL',  name: 'Solana',   icon: '◎', color: '#9945ff', price: 178   },
+                  { symbol: 'USDC', name: 'USD Coin', icon: '$',  color: '#2775ca', price: 1     },
+                ].map(coin => (
+                  <button key={coin.symbol} className="crypto-coin-btn"
+                    onClick={() => {
+                      if (!amount || Number(amount) <= 0) return
+                      if (Number(amount) > (profile?.balance || 0)) { setSearchError('Insufficient balance'); return }
+                      const qty = (Number(amount) / coin.price).toFixed(6)
+                      handleCryptoBuy(coin, qty)
+                    }}>
+                    <span className="coin-icon" style={{ color: coin.color }}>{coin.icon}</span>
+                    <div className="coin-info">
+                      <strong>{coin.name}</strong>
+                      <span>{coin.symbol} · ${coin.price.toLocaleString()}</span>
+                    </div>
+                    <span className="coin-arrow">›</span>
+                  </button>
+                ))}
+              </div>
+              {searchError && <p className="pay-error">{searchError}</p>}
+              <p className="crypto-disclaimer">Simulated crypto purchases. Real trading via Coinbase Commerce coming soon.</p>
+            </div>
+          )}
+
           {/* CTA */}
-          {!showFunding && action !== 'withdraw' && (
+          {!showFunding && action !== 'withdraw' && action !== 'crypto' && (
             <button className="btn btn-primary pay-cta"
               disabled={loading || !amount || Number(amount) <= 0 ||
                 ((action === 'send' || action === 'request') && !recipientUser)}

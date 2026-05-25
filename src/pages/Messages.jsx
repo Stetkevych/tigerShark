@@ -143,16 +143,12 @@ function ChatView({ threadId }) {
 
   useEffect(() => {
     if (!client || !threadId) return
-
-    // Load thread info
     client.models.Thread.get({ id: threadId }).then(({ data: thread }) => {
       if (!thread) return
       const otherId = thread.participantA === profile.userId ? thread.participantB : thread.participantA
       client.models.UserProfile.list({ filter: { userId: { eq: otherId } } })
         .then(({ data }) => { if (data?.length > 0) setOther(data[0]) })
     })
-
-    // Load messages
     const loadMessages = async () => {
       const { data } = await client.models.Message.list({
         filter: { threadId: { eq: threadId } },
@@ -160,15 +156,12 @@ function ChatView({ threadId }) {
       setMessages((data || []).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)))
     }
     loadMessages()
-
-    // Subscribe to new messages
     const sub = client.models.Message.onCreate({
       filter: { threadId: { eq: threadId } },
     }).subscribe({
       next: (msg) => setMessages(prev => [...prev, msg]),
       error: (e) => console.error(e),
     })
-
     return () => sub.unsubscribe()
   }, [client, threadId, profile])
 
@@ -182,17 +175,11 @@ function ChatView({ threadId }) {
     setSending(true)
     setInput('')
     try {
-      const msg = await client.models.Message.create({
-        threadId,
-        senderId: profile.userId,
-        content:  text,
-        read:     false,
+      await client.models.Message.create({
+        threadId, senderId: profile.userId, content: text, read: false,
       })
-      // Update thread last message
       await client.models.Thread.update({
-        id: threadId,
-        lastMessage: text,
-        lastMessageAt: new Date().toISOString(),
+        id: threadId, lastMessage: text, lastMessageAt: new Date().toISOString(),
       })
     } catch (e) { console.error(e) }
     finally { setSending(false) }
@@ -209,9 +196,7 @@ function ChatView({ threadId }) {
           <span className="chat-header-name">{other?.displayName || '...'}</span>
           <span className="chat-header-sub">@{other?.username || ''}</span>
         </div>
-        <button className="chat-pay-btn" onClick={() => navigate(`/pay?action=send&to=${other?.username}`)}>
-          Pay
-        </button>
+        <button className="chat-pay-btn" onClick={() => navigate(`/pay?action=send&to=${other?.username}`)}>Pay</button>
       </div>
 
       <div className="chat-messages">
@@ -219,9 +204,7 @@ function ChatView({ threadId }) {
           const isMe = msg.senderId === profile.userId
           return (
             <div key={msg.id} className={`bubble-wrap ${isMe ? 'me' : 'them'}`}>
-              <div className={`bubble ${isMe ? 'bubble-me' : 'bubble-them'}`}>
-                {msg.content}
-              </div>
+              <div className={`bubble ${isMe ? 'bubble-me' : 'bubble-them'}`}>{msg.content}</div>
               <span className="bubble-time">
                 {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
@@ -232,15 +215,13 @@ function ChatView({ threadId }) {
       </div>
 
       <div className="chat-input-bar">
-        <input
-          className="chat-input"
-          placeholder="Message..."
+        <input className="chat-input" placeholder="Message..."
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), send())}
         />
         <button className="chat-send" onClick={send} disabled={!input.trim() || sending}>
-          {sending ? <span className="spinner" style={{ width: 16, height: 16 }} /> : '➤'}
+          {sending ? <span className="spinner" style={{ width:16, height:16 }} /> : '➤'}
         </button>
       </div>
     </div>

@@ -7,14 +7,17 @@ const QUICK_ACTIONS = [
   { icon: '↑', label: 'Send',     to: '/pay?action=send',    color: 'var(--teal)'  },
   { icon: '↓', label: 'Request',  to: '/pay?action=request', color: 'var(--gold)'  },
   { icon: '+', label: 'Add Cash', to: '/pay?action=topup',   color: 'var(--green)' },
-  { icon: '⟵', label: 'Withdraw', to: '/pay?action=withdraw',color: 'var(--text-muted)' },
+  { icon: '₿', label: 'Crypto',   to: '/pay?action=crypto',  color: '#f7931a'      },
 ]
 
 export default function Home() {
-  const { profile, client } = useApp()
+  const { profile, client, refreshProfile } = useApp()
   const navigate = useNavigate()
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
+
+  // Always refresh balance when Home mounts
+  useEffect(() => { refreshProfile() }, [])
 
   useEffect(() => {
     if (!client || !profile) { setLoading(false); return }
@@ -31,14 +34,11 @@ export default function Home() {
         setTransactions((data || []).sort((a, b) =>
           new Date(b.createdAt) - new Date(a.createdAt)
         ).slice(0, 10))
-      } catch (e) {
-        console.error(e)
-      } finally {
-        setLoading(false)
-      }
+      } catch (e) { console.error(e) }
+      finally { setLoading(false) }
     }
     load()
-  }, [client, profile])
+  }, [client, profile?.id])
 
   const balance = profile?.balance ?? 0
 
@@ -46,7 +46,6 @@ export default function Home() {
     <div className="home page">
       <div className="container">
 
-        {/* Balance card */}
         <div className="balance-card animate-fade-up">
           <div className="balance-bg" />
           <p className="balance-label">Total Balance</p>
@@ -56,7 +55,6 @@ export default function Home() {
           <p className="balance-user">@{profile?.username || '...'}</p>
         </div>
 
-        {/* Quick actions */}
         <div className="quick-actions animate-fade-up" style={{ animationDelay: '0.1s' }}>
           {QUICK_ACTIONS.map(a => (
             <button key={a.label} className="quick-action-btn" onClick={() => navigate(a.to)}>
@@ -68,7 +66,6 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Recent activity */}
         <div className="section-header animate-fade-up" style={{ animationDelay: '0.15s' }}>
           <h2 className="section-title">Recent Activity</h2>
           <button className="see-all" onClick={() => navigate('/activity')}>See all</button>
@@ -100,17 +97,18 @@ export default function Home() {
 function TransactionRow({ tx, myId }) {
   const isSender = tx.senderId === myId
   const name     = isSender ? tx.recipientName : tx.senderName
-  const sign     = isSender ? '-' : '+'
-  const cls      = isSender ? 'amount-negative' : 'amount-positive'
-  const icon     = tx.type === 'topup' ? '↓' : tx.type === 'withdraw' ? '↑' : isSender ? '↑' : '↓'
+  const sign     = isSender && tx.type !== 'topup' ? '-' : '+'
+  const cls      = isSender && tx.type !== 'topup' ? 'amount-negative' : 'amount-positive'
+  const icon     = tx.type === 'topup' ? '↓' : tx.type === 'crypto' ? '₿' : tx.type === 'withdraw' ? '↑' : isSender ? '↑' : '↓'
+  const label    = tx.type === 'topup' ? 'Added Cash' : tx.type === 'crypto' ? 'Crypto Purchase' : tx.type === 'withdraw' ? 'Withdrawal' : name || 'Unknown'
 
   return (
     <div className="tx-row card">
-      <div className="tx-icon" style={{ color: isSender ? 'var(--red)' : 'var(--green)' }}>
+      <div className="tx-icon" style={{ color: tx.type === 'topup' || tx.type === 'crypto' || !isSender ? 'var(--green)' : 'var(--red)' }}>
         {icon}
       </div>
       <div className="tx-info">
-        <span className="tx-name">{tx.type === 'topup' ? 'Added Cash' : tx.type === 'withdraw' ? 'Withdrawal' : name || 'Unknown'}</span>
+        <span className="tx-name">{label}</span>
         <span className="tx-memo">{tx.memo || tx.type}</span>
       </div>
       <div className="tx-right">

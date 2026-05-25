@@ -53,8 +53,13 @@
 .chat-view {
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - var(--nav-height));
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: var(--nav-height);
   background: var(--bg);
+  z-index: 10;
 }
 
 .chat-header {

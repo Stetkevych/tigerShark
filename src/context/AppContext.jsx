@@ -1,19 +1,13 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { getCurrentUser, signOut, fetchUserAttributes } from 'aws-amplify/auth'
 import { generateClient } from 'aws-amplify/data'
 
 const AppCtx = createContext(null)
 export const useApp = () => useContext(AppCtx)
 
-// Amplify Data client — typed when amplify_outputs.json exists
 let client = null
-try {
-  client = generateClient()
-} catch {
-  // sandbox not running yet
-}
+try { client = generateClient() } catch {}
 
-// Avatar color palette
 const AVATAR_COLORS = [
   'linear-gradient(135deg,#00d4aa,#0077b6)',
   'linear-gradient(135deg,#f5c842,#f39c12)',
@@ -26,9 +20,10 @@ export const getAvatarColor = (str) =>
   AVATAR_COLORS[str?.charCodeAt(0) % AVATAR_COLORS.length] || AVATAR_COLORS[0]
 
 export function AppProvider({ children }) {
-  const [user,    setUser]    = useState(null)   // Cognito user
-  const [profile, setProfile] = useState(null)   // DynamoDB UserProfile
+  const [user,    setUser]    = useState(null)
+  const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  const profileIdRef = useRef(null)
 
   const loadUser = useCallback(async () => {
     try {
@@ -36,15 +31,14 @@ export function AppProvider({ children }) {
       const attrs = await fetchUserAttributes()
       setUser({ ...cognitoUser, ...attrs })
 
-      // Load or create DynamoDB profile
       if (client) {
         const { data: profiles } = await client.models.UserProfile.list({
           filter: { userId: { eq: cognitoUser.userId } },
         })
         if (profiles?.length > 0) {
           setProfile(profiles[0])
+          profileIdRef.current = profiles[0].id
         } else {
-          // Auto-create profile on first login
           const username = attrs.preferred_username ||
             attrs.email?.split('@')[0] ||
             cognitoUser.userId.slice(0, 8)
@@ -56,6 +50,7 @@ export function AppProvider({ children }) {
             avatarColor: getAvatarColor(username),
           })
           setProfile(newProfile)
+          profileIdRef.current = newProfile.id
         }
       }
     } catch {
@@ -68,18 +63,47 @@ export function AppProvider({ children }) {
 
   useEffect(() => { loadUser() }, [loadUser])
 
-  const refreshProfile = useCallback(async () => {
-    if (!user || !client) return
-    const { data: profiles } = await client.models.UserProfile.list({
-      filter: { userId: { eq: user.userId } },
+  // ── Subscribe to real-time balance updates ────────────────
+  useEffect(() => {
+    if (!client || !profileIdRef.current) return
+
+    // Re-fetch profile whenever UserProfile is updated
+    const sub = client.models.UserProfile.onUpdate().subscribe({
+      next: (updated) => {
+        if (updated.id === profileIdRef.current) {
+          setProfile(updated)
+        }
+      },
+      error: (e) => console.error('Profile subscription error:', e),
     })
-    if (profiles?.length > 0) setProfile(profiles[0])
+
+    return () => sub.unsubscribe()
+  }, [profile?.id])
+
+  // ── Manual refresh (called after transactions) ────────────
+  const refreshProfile = useCallback(async () => {
+    if (!client || !profileIdRef.current) return
+    try {
+      const { data } = await client.models.UserProfile.get({ id: profileIdRef.current })
+      if (data) setProfile(data)
+    } catch {
+      // fallback to list
+      if (!user) return
+      const { data: profiles } = await client.models.UserProfile.list({
+        filter: { userId: { eq: user.userId } },
+      })
+      if (profiles?.length > 0) {
+        setProfile(profiles[0])
+        profileIdRef.current = profiles[0].id
+      }
+    }
   }, [user])
 
   const handleSignOut = useCallback(async () => {
     await signOut()
     setUser(null)
     setProfile(null)
+    profileIdRef.current = null
   }, [])
 
   return (
