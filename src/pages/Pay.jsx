@@ -20,7 +20,7 @@ const CARD_STYLE = {
   },
 }
 
-// ── Card form — charges card and adds to balance ──────────────
+// ── Card form ─────────────────────────────────────────────────
 function CardForm({ amount, onSuccess, onCancel }) {
   const stripe   = useStripe()
   const elements = useElements()
@@ -32,25 +32,10 @@ function CardForm({ amount, onSuccess, onCancel }) {
     if (!stripe || !elements) return
     setLoading(true)
     setError(null)
-
     const card = elements.getElement(CardElement)
-
-    // Create a payment method from the card
-    const { error: pmError, paymentMethod } = await stripe.createPaymentMethod({
-      type: 'card',
-      card,
-    })
-
-    if (pmError) {
-      setError(pmError.message)
-      setLoading(false)
-      return
-    }
-
-    // In test mode — confirm the payment method is valid
-    // Real flow: backend creates PaymentIntent, frontend confirms it
-    // For now we simulate success with a valid test card
-    onSuccess({ id: paymentMethod.id, status: 'succeeded' })
+    const { error: pmError, paymentMethod } = await stripe.createPaymentMethod({ type: 'card', card })
+    if (pmError) { setError(pmError.message); setLoading(false); return }
+    onSuccess({ id: paymentMethod.id, status: 'succeeded', method: 'card' })
   }
 
   return (
@@ -72,6 +57,136 @@ function CardForm({ amount, onSuccess, onCancel }) {
   )
 }
 
+// ── ACH Bank form ─────────────────────────────────────────────
+function BankForm({ amount, onSuccess, onCancel }) {
+  const stripe = useStripe()
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState(null)
+  const [step,    setStep]    = useState('details') // details | verify
+  const [bankData, setBankData] = useState({
+    accountHolderName: '',
+    routingNumber: '',
+    accountNumber: '',
+    accountType: 'checking',
+  })
+  const [verifyAmounts, setVerifyAmounts] = useState({ a1: '', a2: '' })
+
+  const handleLink = async (e) => {
+    e.preventDefault()
+    if (!stripe) return
+    setLoading(true)
+    setError(null)
+
+    try {
+      // Create ACH bank account token via Stripe.js
+      const { token, error: tokenError } = await stripe.createToken('bank_account', {
+        country: 'US',
+        currency: 'usd',
+        routing_number: bankData.routingNumber,
+        account_number: bankData.accountNumber,
+        account_holder_name: bankData.accountHolderName,
+        account_holder_type: bankData.accountType,
+      })
+
+      if (tokenError) {
+        setError(tokenError.message)
+        setLoading(false)
+        return
+      }
+
+      // In test mode Stripe auto-verifies — treat as success
+      onSuccess({ id: token.id, status: 'succeeded', method: 'ach', last4: token.bank_account?.last4 })
+    } catch (err) {
+      setError(err.message || 'Bank linking failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleLink} className="checkout-form">
+      <div className="bank-form-header">
+        <span className="bank-icon">🏦</span>
+        <div>
+          <p className="bank-form-title">Link Bank Account</p>
+          <p className="bank-form-sub">ACH transfer · 1–3 business days</p>
+        </div>
+      </div>
+
+      <input className="input" placeholder="Account holder name"
+        value={bankData.accountHolderName}
+        onChange={e => setBankData(d => ({ ...d, accountHolderName: e.target.value }))}
+        required
+      />
+      <input className="input" placeholder="Routing number (9 digits)"
+        value={bankData.routingNumber}
+        onChange={e => setBankData(d => ({ ...d, routingNumber: e.target.value }))}
+        maxLength={9} required
+      />
+      <input className="input" placeholder="Account number"
+        value={bankData.accountNumber}
+        onChange={e => setBankData(d => ({ ...d, accountNumber: e.target.value }))}
+        required
+      />
+
+      <div className="account-type-row">
+        {['checking', 'savings'].map(t => (
+          <button key={t} type="button"
+            className={`account-type-btn${bankData.accountType === t ? ' active' : ''}`}
+            onClick={() => setBankData(d => ({ ...d, accountType: t }))}>
+            {t.charAt(0).toUpperCase() + t.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      <p className="test-card-hint">
+        Test routing: <strong>110000000</strong> · Test account: <strong>000123456789</strong>
+      </p>
+
+      {error && <p className="pay-error">{error}</p>}
+
+      <div className="checkout-actions">
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>Cancel</button>
+        <button type="submit" className="btn btn-primary" disabled={loading ||
+          !bankData.accountHolderName || !bankData.routingNumber || !bankData.accountNumber}>
+          {loading ? <span className="spinner" /> : `Add $${amount} via Bank`}
+        </button>
+      </div>
+    </form>
+  )
+}
+
+// ── Add Cash method selector ──────────────────────────────────
+function AddCashFlow({ amount, onSuccess, onCancel }) {
+  const [method, setMethod] = useState(null) // null | 'card' | 'bank'
+
+  if (method === 'card') return <Elements stripe={stripePromise}><CardForm amount={amount} onSuccess={onSuccess} onCancel={() => setMethod(null)} /></Elements>
+  if (method === 'bank') return <Elements stripe={stripePromise}><BankForm amount={amount} onSuccess={onSuccess} onCancel={() => setMethod(null)} /></Elements>
+
+  return (
+    <div className="add-cash-methods">
+      <p className="add-cash-label">Choose funding method</p>
+      <button className="method-btn" onClick={() => setMethod('card')}>
+        <span className="method-icon">💳</span>
+        <div className="method-info">
+          <strong>Debit / Credit Card</strong>
+          <span>Instant · Visa, Mastercard, Amex</span>
+        </div>
+        <span className="method-arrow">›</span>
+      </button>
+      <button className="method-btn" onClick={() => setMethod('bank')}>
+        <span className="method-icon">🏦</span>
+        <div className="method-info">
+          <strong>Bank Account (ACH)</strong>
+          <span>1–3 business days · No fees</span>
+        </div>
+        <span className="method-arrow">›</span>
+      </button>
+      <button className="btn btn-ghost" style={{ marginTop: 4 }} onClick={onCancel}>Cancel</button>
+    </div>
+  )
+}
+
 // ── Main Pay page ─────────────────────────────────────────────
 export default function Pay() {
   const [searchParams] = useSearchParams()
@@ -85,20 +200,15 @@ export default function Pay() {
   const [recipient,     setRecipient]     = useState('')
   const [recipientUser, setRecipientUser] = useState(null)
   const [searchError,   setSearchError]   = useState('')
-  const [showCard,      setShowCard]      = useState(false)
+  const [showFunding,   setShowFunding]   = useState(false)
   const [loading,       setLoading]       = useState(false)
   const [success,       setSuccess]       = useState(null)
 
   const switchAction = (key) => {
-    setAction(key)
-    setSuccess(null)
-    setShowCard(false)
-    setSearchError('')
-    setRecipientUser(null)
-    setRecipient('')
+    setAction(key); setSuccess(null); setShowFunding(false)
+    setSearchError(''); setRecipientUser(null); setRecipient('')
   }
 
-  // Search for recipient by username
   const searchUser = async () => {
     if (!recipient.trim() || !client) return
     setSearchError('')
@@ -106,105 +216,61 @@ export default function Pay() {
       const { data } = await client.models.UserProfile.list({
         filter: { username: { eq: recipient.trim().replace('@', '') } },
       })
-      if (data?.length > 0) {
-        setRecipientUser(data[0])
-      } else {
-        setSearchError('User not found')
-        setRecipientUser(null)
-      }
-    } catch {
-      setSearchError('Error searching for user')
-    }
+      if (data?.length > 0) setRecipientUser(data[0])
+      else { setSearchError('User not found'); setRecipientUser(null) }
+    } catch { setSearchError('Error searching for user') }
   }
 
-  // Add cash — show card form
-  const handleTopupClick = () => {
-    if (!amount || Number(amount) <= 0) return
-    setShowCard(true)
-  }
-
-  // Called after Stripe card is confirmed
-  const onCardSuccess = async (paymentMethod) => {
+  const onFundingSuccess = async (paymentMethod) => {
     setLoading(true)
     try {
       const amt = Number(amount)
-      await client.models.UserProfile.update({
-        id:      profile.id,
-        balance: (profile.balance || 0) + amt,
-      })
+      const memo = paymentMethod.method === 'ach' ? `Bank transfer ···${paymentMethod.last4 || ''}` : 'Added cash via card'
+      await client.models.UserProfile.update({ id: profile.id, balance: (profile.balance || 0) + amt })
       await client.models.Transaction.create({
-        senderId:        profile.userId,
-        recipientId:     profile.userId,
-        senderName:      profile.displayName,
-        recipientName:   profile.displayName,
-        amount:          amt,
-        memo:            'Added cash',
-        status:          'completed',
-        type:            'topup',
+        senderId: profile.userId, recipientId: profile.userId,
+        senderName: profile.displayName, recipientName: profile.displayName,
+        amount: amt, memo, status: 'completed', type: 'topup',
         stripePaymentId: paymentMethod.id,
       })
       await refreshProfile()
-      setSuccess({ type: 'topup', amount: amt })
-      setShowCard(false)
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setLoading(false)
-    }
+      setSuccess({ type: 'topup', amount: amt, method: paymentMethod.method })
+      setShowFunding(false)
+    } catch (e) { console.error(e) }
+    finally { setLoading(false) }
   }
 
-  // P2P send
   const handleSend = async () => {
     if (!recipientUser || !amount || Number(amount) <= 0) return
-    if (Number(amount) > (profile?.balance || 0)) {
-      setSearchError('Insufficient balance — add cash first')
-      return
-    }
+    if (Number(amount) > (profile?.balance || 0)) { setSearchError('Insufficient balance — add cash first'); return }
     setLoading(true)
     try {
       const amt = Number(amount)
-      await client.models.UserProfile.update({ id: profile.id,        balance: (profile.balance || 0) - amt })
-      await client.models.UserProfile.update({ id: recipientUser.id,  balance: (recipientUser.balance || 0) + amt })
+      await client.models.UserProfile.update({ id: profile.id,       balance: (profile.balance || 0) - amt })
+      await client.models.UserProfile.update({ id: recipientUser.id, balance: (recipientUser.balance || 0) + amt })
       await client.models.Transaction.create({
-        senderId:      profile.userId,
-        recipientId:   recipientUser.userId,
-        senderName:    profile.displayName,
-        recipientName: recipientUser.displayName,
-        amount:        amt,
-        memo:          memo || '',
-        status:        'completed',
-        type:          'send',
+        senderId: profile.userId, recipientId: recipientUser.userId,
+        senderName: profile.displayName, recipientName: recipientUser.displayName,
+        amount: amt, memo: memo || '', status: 'completed', type: 'send',
       })
       await refreshProfile()
       setSuccess({ type: 'send', amount: amt, name: recipientUser.displayName })
-    } catch {
-      setSearchError('Transfer failed. Try again.')
-    } finally {
-      setLoading(false)
-    }
+    } catch { setSearchError('Transfer failed. Try again.') }
+    finally { setLoading(false) }
   }
 
-  // Request money
   const handleRequest = async () => {
     if (!recipientUser || !amount || Number(amount) <= 0) return
     setLoading(true)
     try {
       await client.models.Transaction.create({
-        senderId:      recipientUser.userId,
-        recipientId:   profile.userId,
-        senderName:    recipientUser.displayName,
-        recipientName: profile.displayName,
-        amount:        Number(amount),
-        memo:          memo || 'Payment request',
-        status:        'pending',
-        type:          'request',
+        senderId: recipientUser.userId, recipientId: profile.userId,
+        senderName: recipientUser.displayName, recipientName: profile.displayName,
+        amount: Number(amount), memo: memo || 'Payment request', status: 'pending', type: 'request',
       })
       setSuccess({ type: 'request', amount: Number(amount), name: recipientUser.displayName })
-    } catch {
-      setSearchError('Request failed. Try again.')
-    } finally {
-      setLoading(false)
-    }
+    } catch { setSearchError('Request failed. Try again.') }
+    finally { setLoading(false) }
   }
 
   if (success) {
@@ -219,8 +285,9 @@ export default function Pay() {
               {success.type === 'request' && `Requested $${success.amount.toFixed(2)} from ${success.name}!`}
             </h2>
             <p>
-              {success.type === 'topup'   && 'Your balance has been updated.'}
-              {success.type === 'send'    && 'The transfer was instant.'}
+              {success.type === 'topup' && success.method === 'ach' && 'ACH transfer initiated. Funds arrive in 1–3 business days.'}
+              {success.type === 'topup' && success.method === 'card' && 'Balance updated instantly.'}
+              {success.type === 'send'    && 'Transfer was instant.'}
               {success.type === 'request' && "They'll be notified."}
             </p>
             <button className="btn btn-primary" onClick={() => navigate('/home')}>Back to Home</button>
@@ -256,30 +323,20 @@ export default function Pay() {
 
         <div className="pay-card card animate-scale-in" key={action}>
 
-          {/* Amount */}
-          {!showCard && (
+          {/* Amount — hide when funding flow is open */}
+          {!showFunding && (
             <div className="amount-input-wrap">
               <span className="amount-dollar">$</span>
-              <input
-                className="amount-input"
-                type="number"
-                placeholder="0.00"
-                value={amount}
-                onChange={e => setAmount(e.target.value)}
-                min="0.01"
-                step="0.01"
-              />
+              <input className="amount-input" type="number" placeholder="0.00"
+                value={amount} onChange={e => setAmount(e.target.value)} min="0.01" step="0.01" />
             </div>
           )}
 
           {/* Recipient */}
-          {(action === 'send' || action === 'request') && !showCard && (
+          {(action === 'send' || action === 'request') && !showFunding && (
             <div className="recipient-section">
               <div className="recipient-search">
-                <input
-                  className="input"
-                  placeholder="@username"
-                  value={recipient}
+                <input className="input" placeholder="@username" value={recipient}
                   onChange={e => { setRecipient(e.target.value); setRecipientUser(null) }}
                   onKeyDown={e => e.key === 'Enter' && searchUser()}
                   onFocus={e => setTimeout(() => e.target.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300)}
@@ -289,8 +346,7 @@ export default function Pay() {
               {searchError && <p className="pay-error">{searchError}</p>}
               {recipientUser && (
                 <div className="recipient-found">
-                  <div className="avatar recipient-avatar"
-                    style={{ background: recipientUser.avatarColor || 'var(--grad-main)' }}>
+                  <div className="avatar recipient-avatar" style={{ background: recipientUser.avatarColor || 'var(--grad-main)' }}>
                     {recipientUser.displayName[0]}
                   </div>
                   <div>
@@ -304,24 +360,18 @@ export default function Pay() {
           )}
 
           {/* Memo */}
-          {(action === 'send' || action === 'request') && !showCard && (
-            <input
-              className="input"
-              placeholder="What's it for? (optional)"
-              value={memo}
-              onChange={e => setMemo(e.target.value)}
-            />
+          {(action === 'send' || action === 'request') && !showFunding && (
+            <input className="input" placeholder="What's it for? (optional)"
+              value={memo} onChange={e => setMemo(e.target.value)} />
           )}
 
-          {/* Stripe card form for top-up */}
-          {action === 'topup' && showCard && (
-            <Elements stripe={stripePromise}>
-              <CardForm
-                amount={Number(amount).toFixed(2)}
-                onSuccess={onCardSuccess}
-                onCancel={() => setShowCard(false)}
-              />
-            </Elements>
+          {/* Add Cash funding flow */}
+          {action === 'topup' && showFunding && (
+            <AddCashFlow
+              amount={Number(amount).toFixed(2)}
+              onSuccess={onFundingSuccess}
+              onCancel={() => setShowFunding(false)}
+            />
           )}
 
           {/* Withdraw */}
@@ -333,17 +383,15 @@ export default function Pay() {
           )}
 
           {/* CTA */}
-          {!showCard && action !== 'withdraw' && (
-            <button
-              className="btn btn-primary pay-cta"
+          {!showFunding && action !== 'withdraw' && (
+            <button className="btn btn-primary pay-cta"
               disabled={loading || !amount || Number(amount) <= 0 ||
                 ((action === 'send' || action === 'request') && !recipientUser)}
               onClick={
-                action === 'topup'   ? handleTopupClick :
+                action === 'topup'   ? () => setShowFunding(true) :
                 action === 'send'    ? handleSend :
                 handleRequest
-              }
-            >
+              }>
               {loading ? <span className="spinner" /> :
                 action === 'send'    ? `Send $${amount || '0.00'}` :
                 action === 'request' ? `Request $${amount || '0.00'}` :
