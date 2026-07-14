@@ -251,6 +251,26 @@
   box-shadow: 0 0 0 3px rgba(0,212,170,0.12);
 }
 
+.fee-breakdown {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 16px;
+  font-size: 13px;
+  color: var(--text-soft);
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+.fee-total { font-weight: 700; color: var(--text); }
+
+.fee-note {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  margin-top: -8px;
+}
+
 .test-card-hint {
   font-size: 12px;
   color: var(--text-dim);

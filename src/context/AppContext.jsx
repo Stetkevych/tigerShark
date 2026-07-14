@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
-import { getCurrentUser, signOut, fetchUserAttributes } from 'aws-amplify/auth'
+import { getCurrentUser, signOut, fetchUserAttributes, fetchAuthSession } from 'aws-amplify/auth'
 import { generateClient } from 'aws-amplify/data'
+import outputs from '../../amplify_outputs.json'
 
 const AppCtx = createContext(null)
 export const useApp = () => useContext(AppCtx)
@@ -106,10 +107,32 @@ export function AppProvider({ children }) {
     profileIdRef.current = null
   }, [])
 
+  // ── Call Stripe Lambda via AWS SDK ───────────────────────────
+  const callStripe = useCallback(async (payload) => {
+    const { LambdaClient, InvokeCommand } = await import('@aws-sdk/client-lambda')
+    const { fetchAuthSession } = await import('aws-amplify/auth')
+    const session = await fetchAuthSession()
+    const lambdaClient = new LambdaClient({
+      region: 'us-east-1',
+      credentials: session.credentials,
+    })
+    const res = await lambdaClient.send(new InvokeCommand({
+      FunctionName: 'amplify-tigershark-alexst-stripePaymentlambda1EBFD-P8AFwvgkFsnf',
+      Payload: new TextEncoder().encode(JSON.stringify({ body: JSON.stringify(payload) })),
+    }))
+    const result = JSON.parse(new TextDecoder().decode(res.Payload))
+    // handle both direct response and API Gateway-style wrapped response
+    const data = result.body
+      ? (typeof result.body === 'string' ? JSON.parse(result.body) : result.body)
+      : result
+    if ((result.statusCode && result.statusCode >= 400) || data?.error) throw new Error(data?.error || 'Lambda error')
+    return data
+  }, [])
+
   return (
     <AppCtx.Provider value={{
       user, profile, loading, client,
-      loadUser, refreshProfile, signOut: handleSignOut,
+      loadUser, refreshProfile, signOut: handleSignOut, callStripe,
     }}>
       {children}
     </AppCtx.Provider>

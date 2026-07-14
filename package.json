@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@aws-amplify/ui-react": "^6.15.4",
+    "@aws-sdk/client-lambda": "^3.1086.0",
     "@stripe/react-stripe-js": "^6.4.0",
     "@stripe/stripe-js": "^9.6.0",
     "aws-amplify": "^6.17.0",

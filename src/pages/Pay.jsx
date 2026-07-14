@@ -7,6 +7,9 @@ import './Pay.css'
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
 
+const PLATFORM_FEE_RATE = 0.015  // 1.5% on top-ups
+const SEND_FEE = 0.25            // $0.25 flat on P2P sends
+
 const COINS = [
   { symbol: 'BTC',  name: 'Bitcoin',  icon: '₿', color: '#f7931a', price: 67420 },
   { symbol: 'ETH',  name: 'Ethereum', icon: 'Ξ', color: '#627eea', price: 3540  },
@@ -22,31 +25,61 @@ const CARD_STYLE = {
 }
 
 // ── Card form ─────────────────────────────────────────────────
-function CardForm({ amount, onSuccess, onCancel }) {
+function CardForm({ amount, onSuccess, onCancel, callStripe, userId, customerId }) {
   const stripe = useStripe()
   const elements = useElements()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
+  const fee = (Number(amount) * PLATFORM_FEE_RATE).toFixed(2)
+  const total = (Number(amount) + Number(fee)).toFixed(2)
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!stripe || !elements) return
     setLoading(true)
-    const card = elements.getElement(CardElement)
-    const { error: pmError, paymentMethod } = await stripe.createPaymentMethod({ type: 'card', card })
-    if (pmError) { setError(pmError.message); setLoading(false); return }
-    onSuccess({ id: paymentMethod.id, status: 'succeeded', method: 'card' })
+    setError(null)
+    try {
+      // 1. Create PaymentIntent server-side with fee baked in
+      const { clientSecret, paymentIntentId, netAmount } = await callStripe({
+        action: 'createPaymentIntent',
+        amount: Number(amount),
+        userId,
+        customerId: customerId || undefined,
+        idempotencyKey: `topup_${userId}_${Date.now()}`,
+      })
+
+      // 2. Confirm the card payment client-side
+      const card = elements.getElement(CardElement)
+      const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: { card },
+      })
+      if (confirmError) { setError(confirmError.message); setLoading(false); return }
+      if (paymentIntent.status !== 'succeeded') { setError('Payment did not complete'); setLoading(false); return }
+
+      // 3. Verify server-side before crediting balance
+      await callStripe({ action: 'verifyPaymentIntent', paymentIntentId })
+
+      onSuccess({ id: paymentIntentId, status: 'succeeded', method: 'card', netAmount })
+    } catch (err) {
+      setError(err.message || 'Payment failed')
+    } finally { setLoading(false) }
   }
 
   return (
     <form onSubmit={handleSubmit} className="checkout-form">
       <div className="card-element-wrap"><CardElement options={CARD_STYLE} /></div>
+      <div className="fee-breakdown">
+        <span>Amount</span><span>${Number(amount).toFixed(2)}</span>
+        <span>Platform fee (1.5%)</span><span>${fee}</span>
+        <span className="fee-total">Total charged</span><span className="fee-total">${total}</span>
+      </div>
       <p className="test-card-hint">Test card: <strong>4242 4242 4242 4242</strong> · Any future date · Any CVC</p>
       {error && <p className="pay-error">{error}</p>}
       <div className="checkout-actions">
         <button type="button" className="btn btn-ghost" onClick={onCancel}>Cancel</button>
         <button type="submit" className="btn btn-primary" disabled={!stripe || loading}>
-          {loading ? <span className="spinner" /> : `Add $${amount}`}
+          {loading ? <span className="spinner" /> : `Pay $${total}`}
         </button>
       </div>
     </form>
@@ -107,10 +140,19 @@ function BankForm({ amount, onSuccess, onCancel }) {
 }
 
 // ── Add Cash method selector ──────────────────────────────────
-function AddCashFlow({ amount, onSuccess, onCancel }) {
+function AddCashFlow({ amount, onSuccess, onCancel, callStripe, userId, customerId }) {
   const [method, setMethod] = useState(null)
-  if (method === 'card') return <Elements stripe={stripePromise}><CardForm amount={amount} onSuccess={onSuccess} onCancel={() => setMethod(null)} /></Elements>
-  if (method === 'bank') return <Elements stripe={stripePromise}><BankForm amount={amount} onSuccess={onSuccess} onCancel={() => setMethod(null)} /></Elements>
+  if (method === 'card') return (
+    <Elements stripe={stripePromise}>
+      <CardForm amount={amount} onSuccess={onSuccess} onCancel={() => setMethod(null)}
+        callStripe={callStripe} userId={userId} customerId={customerId} />
+    </Elements>
+  )
+  if (method === 'bank') return (
+    <Elements stripe={stripePromise}>
+      <BankForm amount={amount} onSuccess={onSuccess} onCancel={() => setMethod(null)} />
+    </Elements>
+  )
   return (
     <div className="add-cash-methods">
       <p className="add-cash-label">Choose funding method</p>
@@ -300,7 +342,7 @@ function CryptoSection({ amount, profile, client, refreshProfile, onSuccess, onE
 export default function Pay() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  const { profile, client, refreshProfile } = useApp()
+  const { profile, client, refreshProfile, callStripe } = useApp()
 
   const defaultAction = searchParams.get('action') || 'send'
   const [action,        setAction]        = useState(defaultAction)
@@ -330,20 +372,20 @@ export default function Pay() {
     } catch { setSearchError('Error searching for user') }
   }
 
-  const onFundingSuccess = async (paymentMethod) => {
+  const onFundingSuccess = async ({ id: paymentIntentId, method, netAmount }) => {
     setLoading(true)
     try {
-      const amt = Number(amount)
-      const fundMemo = paymentMethod.method === 'ach' ? `Bank transfer ···${paymentMethod.last4 || ''}` : 'Added cash via card'
+      const amt = netAmount ?? Number(amount) // use server-verified net amount
+      const fundMemo = method === 'ach' ? 'Bank transfer (ACH)' : 'Added cash via card'
       await client.models.UserProfile.update({ id: profile.id, balance: (profile.balance || 0) + amt })
       await client.models.Transaction.create({
         senderId: profile.userId, recipientId: profile.userId,
         senderName: profile.displayName, recipientName: profile.displayName,
         amount: amt, memo: fundMemo, status: 'completed', type: 'topup',
-        stripePaymentId: paymentMethod.id,
+        stripePaymentId: paymentIntentId,
       })
       await refreshProfile()
-      setSuccess({ type: 'topup', amount: amt, method: paymentMethod.method })
+      setSuccess({ type: 'topup', amount: amt, method })
       setShowFunding(false)
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
@@ -351,16 +393,18 @@ export default function Pay() {
 
   const handleSend = async () => {
     if (!recipientUser || !amount || Number(amount) <= 0) return
-    if (Number(amount) > (profile?.balance || 0)) { setSearchError('Insufficient balance — add cash first'); return }
+    const total = Number(amount) + SEND_FEE
+    if (total > (profile?.balance || 0)) { setSearchError(`Insufficient balance — need $${total.toFixed(2)} ($${SEND_FEE} fee)`); return }
     setLoading(true)
     try {
       const amt = Number(amount)
-      await client.models.UserProfile.update({ id: profile.id, balance: (profile.balance || 0) - amt })
+      await client.models.UserProfile.update({ id: profile.id, balance: (profile.balance || 0) - total })
       await client.models.UserProfile.update({ id: recipientUser.id, balance: (recipientUser.balance || 0) + amt })
       await client.models.Transaction.create({
         senderId: profile.userId, recipientId: recipientUser.userId,
         senderName: profile.displayName, recipientName: recipientUser.displayName,
-        amount: amt, memo: memo || '', status: 'completed', type: 'send',
+        amount: amt, memo: memo ? `${memo} (fee: $${SEND_FEE})` : `Fee: $${SEND_FEE}`,
+        status: 'completed', type: 'send',
       })
       await refreshProfile()
       setSuccess({ type: 'send', amount: amt, name: recipientUser.displayName })
@@ -473,6 +517,12 @@ export default function Pay() {
             </div>
           )}
 
+          {(action === 'send' || action === 'request') && !showFunding && amount && Number(amount) > 0 && (
+            <p className="fee-note">
+              {action === 'send' ? `$${SEND_FEE} fee · total deducted: $${(Number(amount) + SEND_FEE).toFixed(2)}` : ''}
+            </p>
+          )}
+
           {/* Memo */}
           {(action === 'send' || action === 'request') && !showFunding && (
             <input className="input" placeholder="What's it for? (optional)"
@@ -481,7 +531,9 @@ export default function Pay() {
 
           {/* Add Cash */}
           {action === 'topup' && showFunding && (
-            <AddCashFlow amount={Number(amount).toFixed(2)} onSuccess={onFundingSuccess} onCancel={() => setShowFunding(false)} />
+            <AddCashFlow amount={Number(amount).toFixed(2)} onSuccess={onFundingSuccess}
+              onCancel={() => setShowFunding(false)}
+              callStripe={callStripe} userId={profile?.userId} customerId={profile?.stripeCustomerId} />
           )}
 
           {/* Withdraw */}
